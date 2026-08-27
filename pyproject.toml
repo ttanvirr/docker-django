@@ -1,0 +1,20 @@
+[project]
+name = "02-docker-django"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ttanvirr", email = "tanvir.artisan@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "django>=6.1",
+    "gunicorn>=26.2.0",
+]
+
+[project.scripts]
+02-docker-django = "02_docker_django:main"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
