@@ -3,8 +3,9 @@
 - [1. Overview: Containerize a Django application](#1-overview-containerize-a-django-application)
 - [2. Prerequisites](#2-prerequisites)
 - [3. Create the Django project](#3-create-the-django-project)
-- [4. Create a production `Dockerfile`](#4-create-a-production-dockerfile)
-  - [Run the application](#run-the-application)
+- [4. Start with a simple `Dockerfile`](#4-start-with-a-simple-dockerfile)
+- [5. Next step](#5-next-step)
+  - [5.1. Run the application](#51-run-the-application)
 
 # 1. Overview: Containerize a Django application
 
@@ -50,7 +51,9 @@ Your directory should now contain the following files:
 └── README.md
 ```
 
-# 4. Create a production `Dockerfile`
+# 4. Start with a simple `Dockerfile`
+
+We'll first create a simple one-stage image from a base python imgae from `Docker Hardened Images registry`.
 
 `Docker Hardened Images` are production-ready base images maintained by Docker that minimize attack surface.
 
@@ -72,54 +75,59 @@ Your directory should now contain the following files:
    .git/
    ```
 
-4. Create a `Dockerfile` with the following contents:
+4. Create a `Dockerfile` with the following content:
 
    ```dockerfile
-    # syntax=docker/dockerfile:1
-
-    # Build stage: the -dev image includes tools needed to install packages.
-    FROM dhi.io/python:3.14-alpine3.23-dev AS builder
-
-    # Prevent Python from writing .pyc files to disk.
-    ENV PYTHONDONTWRITEBYTECODE=1
-    # Prevent Python from buffering stdout/stderr so logs appear immediately.
-    ENV PYTHONUNBUFFERED=1
-
-    RUN pip install --quiet --root-user-action=ignore uv
-    # Use copy mode since the cache and build filesystem are on different volumes.
-    ENV UV_LINK_MODE=copy
-
-    WORKDIR /app
-
-    # Install dependencies into a virtual environment using cache and bind mounts
-    # so neither uv nor the lock files need to be copied into the image.
-    RUN --mount=type=cache,target=/root/.cache/uv \
-        --mount=type=bind,source=uv.lock,target=uv.lock \
-        --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-        uv sync --frozen --no-install-project
-
-    # Runtime stage: minimal DHI image with no shell or package manager,
-    # already runs as the nonroot user.
-    FROM dhi.io/python:3.14-alpine3.23
-
-    # Prevent Python from buffering stdout/stderr so logs appear immediately.
-    ENV PYTHONUNBUFFERED=1
-    # Activate the virtual environment copied from the build stage.
-    ENV PATH="/app/.venv/bin:$PATH"
-
-    WORKDIR /app
-
-    # Copy the pre-built virtual environment and application source code.
-    COPY --from=builder /app/.venv /app/.venv
-    COPY . .
-
-    EXPOSE 8000
-
-    # Run Gunicorn as the production WSGI server.
-    CMD ["gunicorn", "myapp.wsgi:application", "--bind", "0.0.0.0:8000"]
+   # Build my image from a base python image from DHI registry
+   # `-dev` image includes tools needed to install packages.
+   FROM dhi.io/python:3.14-alpine3.24-dev
+   # Prevent Python from writing .pyc files to disk.
+   ENV PYTHONDONTWRITEBYTECODE=1
+   # Prevent Python from buffering stdout/stderr so logs appear immediately.
+   ENV PYTHONUNBUFFERED=1
+   # Set `/app` as the working directory inside the container
+   WORKDIR /app
+   # Install uv using python image's pip;
+   # `--quiet` (optional) reduces pip's output;
+   # `--root-user-action=ignore` (optional) prevents pip from warning about the root user
+   RUN pip install --quiet --root-user-action=ignore uv
+   # Copy the dependencies files to the working directory
+   COPY pyproject.toml uv.lock ./
+   # `uv sync` creates `.venv` and installs the dependencies in it.
+   # `--frozen` tells uv to use the existing `uv.lock` file;
+   # `--no-install-project` tells uv not to install the project
+   RUN uv sync --frozen --no-install-project
+   # Copy the contents into container at `/app`
+   COPY . .
+   # Tell python to use `.venv`
+   ENV PATH="/app/.venv/bin:$PATH"
+   # Expose port 8000: just a metadata (optional)
+   EXPOSE 8000
+   # Base command to run when the container starts
+   CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
    ```
 
-5. Create a compose.yaml file:
+   > [!NOTE]
+   > Notice `0.0.0.0:8000` rather than: `127.0.0.1:8000`.
+   > Inside a container, Django needs to listen on `0.0.0.0` so that traffic coming through Docker's networking can reach it.
+
+5. Now build the image named `django-docker` for the first time:
+
+   ```bash
+   docker build -t django-docker .
+   ```
+
+6. Then run the container from that image:
+
+   ```bash
+   docker run -p 8000:8000 django-docker
+   ```
+
+7. Open a browser and navigate to http://localhost:8000. You should see the Django welcome page.
+
+# 5. Next step
+
+1. Create a compose.yaml file:
 
    `compose.yaml`
 
@@ -131,7 +139,7 @@ Your directory should now contain the following files:
          - "8000:8000"
    ```
 
-## Run the application
+## 5.1. Run the application
 
 From the `django-docker` directory, run:
 
