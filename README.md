@@ -5,6 +5,7 @@
 - [3. Create the Django project](#3-create-the-django-project)
 - [4. Start with a simple `Dockerfile`](#4-start-with-a-simple-dockerfile)
 - [5. Create a simple docker compose](#5-create-a-simple-docker-compose)
+- [6. Create multi-stage `Dockerfile`](#6-create-multi-stage-dockerfile)
 
 # 1. Overview: Containerize a Django application
 
@@ -151,3 +152,7 @@ We'll first create a simple one-stage image from a base python imgae from `Docke
    Open the browser and navigate to http://localhost:8000. You should again see the same Django welcome page, but this time with simpler `docker compose` command instead to `docker run` commands
 
    Press `ctrl+c` to stop the application.
+
+# 6. Create multi-stage `Dockerfile`
+
+Now that we have the single-stage `Dockerfile` working and `compose.yaml` working, this is the right time to introduce a simple two-stage `Dockerfile`.
