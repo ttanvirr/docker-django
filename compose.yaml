@@ -1,5 +1,9 @@
 services:
   web:
+    # Build the image using Dockerfile in the current directory
     build: .
+    # (optional) name the image
+    image: docker-django
     ports:
+      # equivalent to `docker run -p 8000:8000`
       - "8000:8000"

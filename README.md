@@ -4,8 +4,7 @@
 - [2. Prerequisites](#2-prerequisites)
 - [3. Create the Django project](#3-create-the-django-project)
 - [4. Start with a simple `Dockerfile`](#4-start-with-a-simple-dockerfile)
-- [5. Next step](#5-next-step)
-  - [5.1. Run the application](#51-run-the-application)
+- [5. Create a simple docker compose](#5-create-a-simple-docker-compose)
 
 # 1. Overview: Containerize a Django application
 
@@ -125,28 +124,30 @@ We'll first create a simple one-stage image from a base python imgae from `Docke
 
 7. Open a browser and navigate to http://localhost:8000. You should see the Django welcome page.
 
-# 5. Next step
+# 5. Create a simple docker compose
 
-1. Create a compose.yaml file:
-
-   `compose.yaml`
+1. Create a `compose.yaml` file in project root:
 
    ```yml
    services:
-     web:
-       build: .
-       ports:
-         - "8000:8000"
+   web:
+     # Build the image using Dockerfile in the current directory
+     build: .
+     # (optional) name the image
+     image: docker-django
+     ports:
+       # equivalent to `docker run -p 8000:8000`
+       - "8000:8000"
    ```
 
-## 5.1. Run the application
+2. Run the application:
 
-From the `django-docker` directory, run:
+   From the project directory, run:
 
-```bash
-docker compose up --build
-```
+   ```bash
+   docker compose up --build
+   ```
 
-Open a browser and navigate to http://localhost:8000. You should see the Django welcome page.
+   Open the browser and navigate to http://localhost:8000. You should again see the same Django welcome page, but this time with simpler `docker compose` command instead to `docker run` commands
 
-Press `ctrl+c` to stop the application.
+   Press `ctrl+c` to stop the application.
