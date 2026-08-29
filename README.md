@@ -15,9 +15,15 @@
 - [8. Using mounts to `uv sync` in `Dockerfile`](#8-using-mounts-to-uv-sync-in-dockerfile)
 - [9. Setting up PostgreSQL Database](#9-setting-up-postgresql-database)
   - [9.1. Add the PostgreSQL driver](#91-add-the-postgresql-driver)
-  - [9.2. Create an `env` file](#92-create-an-env-file)
+  - [9.2. Create an `.env` file](#92-create-an-env-file)
   - [9.3. Update `settings.py`](#93-update-settingspy)
   - [9.4. Add the PostgreSQL service](#94-add-the-postgresql-service)
+  - [9.5. Test postgreSQL](#95-test-postgresql)
+  - [9.6. Create and run migrations](#96-create-and-run-migrations)
+  - [9.7. Create superuser](#97-create-superuser)
+  - [9.8. Persist data through volumes](#98-persist-data-through-volumes)
+  - [9.9. Finalize the compose file](#99-finalize-the-compose-file)
+  - [9.10. Final test](#910-final-test)
 
 # 1. Overview: Containerize a Django application
 
@@ -424,7 +430,11 @@ urlpatterns = [
 ]
 ```
 
-Save the changes and look at your logs, you'll see "changes were detected". Visit http://localhost:8000 (or reload it) to see the response "Hello from Django-Docker!"
+Save the changes and look at your logs, you'll see "changes were detected". Visit http://localhost:8000 (or reload it) to see the response "Hello from Django-Docker!".
+
+Compose Watch syncs the change into the container and Django's dev server reloads automatically. If you update `pyproject.toml`or `uv.lock`, Compose Watch triggers a full image rebuild.
+
+Press `ctrl+c` to stop.
 
 # 8. Using mounts to `uv sync` in `Dockerfile`
 
@@ -517,9 +527,9 @@ uv add "psycopg[binary,pool]"
 
 This will add the driver to `pyproject.toml` and install it into `.venv`.
 
-## 9.2. Create an `env` file
+## 9.2. Create an `.env` file
 
-Create an `env` file with the following:
+Create an `.env` file with the following:
 
 ```
 POSTGRES_DB=mydockerdjango
@@ -545,7 +555,7 @@ Update the `DATABASES` configuration in `settings.py`:
 ```py
 import os
 
-DEBUG = os.environ.get('DEBUG', '0') == '1'
+DEBUG = os.environ.get("DEBUG", "0") == "1"
 
 DATABASES = {
     "default": {
@@ -623,3 +633,213 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 ```
+
+Run `docker compose watch` to build and start the development environment again, then verify that both the `db` and `web` containers are running.
+
+## 9.5. Test postgreSQL
+
+1. Run:
+
+```bash
+docker compose exec db psql -U postgres -l
+```
+
+You should see the `mydockerdjango` database.
+
+2. Run:
+
+   ```bash
+   docker compose exec db psql -U postgres mydockerdjango
+   ```
+
+   It should connect to the `mydockerdjango` database.
+
+> [!TIP]
+> You can also access the `exec` shell from your Docker Desktop by navigating to the `db` container.
+
+## 9.6. Create and run migrations
+
+Run following commands to create and apply migrations:
+
+```bash
+docker compose exec web python manage.py makemigrations
+docker compose exec web python manage.py migrate
+```
+
+## 9.7. Create superuser
+
+Run following command to create a superuser:
+
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+
+## 9.8. Persist data through volumes
+
+Currently, PostgreSQL stores its data inside the `db` container. If you delete the container, the database data will be lost.
+
+To avoid this, we'll use a Docker volume to store PostgreSQL's data independently of the container.
+
+Update the `compose.yaml` file as follows:
+
+```yaml
+services:
+  web:
+    # ...
+
+  db:
+    # Run PostgreSQL container using an image
+    image: dhi.io/postgres:18
+    volumes:
+      # Persist database data across container restarts.
+      - db-data:/var/lib/postgresql
+    environment:
+      # ...
+
+volumes:
+  db-data:
+```
+
+The `db-data` volume is now managed by Docker and persists even when the `db` container is deleted and recreated.
+
+You can now verify persistence by creating some database data, deleting the `db` container, and recreating it:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+The database data should still be available because it is stored in the `db-data` volume rather than inside the container.
+
+> [!NOTE]
+> docker compose down does not normally remove named volumes. To remove the volume and its data, you would need to explicitly use:
+>
+> ```bash
+> docker compose down -v
+> ```
+
+## 9.9. Finalize the compose file
+
+We will now add the following things:
+
+1. `restart: always` - This is appropriate for the `db` service. It tells Docker to automatically restart the PostgreSQL container if it stops.
+2. `expose: 5432` - Expose the port only to other services on the Compose network, not to the host machine.
+3. `condition: service_healthy`:
+
+   ```yaml
+   web:
+     depends_on:
+       db:
+         condition: service_healthy
+   ```
+
+   Now Compose doesn't merely start `db` first; it waits until the `db` service passes its healthcheck before starting `web`.
+
+   And in the `db` service:
+
+   ```yaml
+   db:
+     healthcheck:
+       test: ["CMD", "pg_isready"]
+       interval: 10s
+       timeout: 5s
+       retries: 5
+   ```
+
+   `pg_isready` checks whether PostgreSQL is accepting connections.
+
+So, the final `compose.yaml` file is:
+
+```yaml
+services:
+  web:
+    # Build the image using `Dockerfile`
+    build:
+      # use the current directory as the build context
+      context: .
+      # Build the `development` stage from the `Dockerfile` (not the `production` stage).
+      target: development
+
+    # (optional) Name the resulting image.
+    image: docker-django
+
+    ports:
+      # equivalent to `docker run -p 8000:8000`
+      - "8000:8000"
+
+    environment:
+      # Set debug mode to true
+      - DEBUG=1
+      # Database connection settings passed to Django application via environment variables.
+      # variables are defined in `.env` and used in `settings.py`
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+
+    # Wait for the database to pass its healthcheck and
+    # start the `db` service before starting the `web` service.
+    depends_on:
+      db:
+        condition: service_healthy
+
+    develop:
+      watch:
+        # Sync source file changes directly into the container
+        # so Django's dev server can reload them without a full image rebuild.
+        - action: sync
+          path: .
+          target: /app
+          # don't synchronise changes from these paths.
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - .git/
+            - .venv/
+        # Rebuild the image when dependencies change.
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+
+  db:
+    # Run PostgreSQL container using an image
+    image: dhi.io/postgres:18
+    # Automatically restart the db container if it stops.
+    restart: always
+    volumes:
+      # Persist database data across container restarts.
+      - db-data:/var/lib/postgresql
+    environment:
+      # Left-side names are not arbitrary; Right-side name are defined in `.env`
+      # These are PostgreSQL image environment variables.
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    # Expose the port only to other services on the Compose network,
+    # not to the host machine.
+    expose:
+      - 5432
+    # Only report healthy once PostgreSQL is ready to accept connections,
+    # so the web service doesn't start before the database is available.
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:
+```
+
+## 9.10. Final test
+
+Run the follwowing commands once again:
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+Check that everything is okay.

@@ -25,9 +25,11 @@ services:
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
 
-    # start `db` service before `web` service
+    # Wait for the database to pass its healthcheck and
+    # start the `db` service before starting the `web` service.
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
     develop:
       watch:
@@ -51,8 +53,28 @@ services:
   db:
     # Run PostgreSQL container using an image
     image: dhi.io/postgres:18
+    # Automatically restart the db container if it stops.
+    restart: always
+    volumes:
+      # Persist database data across container restarts.
+      - db-data:/var/lib/postgresql
     environment:
       # Left-side names are not arbitrary; Right-side name are defined in `.env`
+      # These are PostgreSQL image environment variables.
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    # Expose the port only to other services on the Compose network,
+    # not to the host machine.
+    expose:
+      - 5432
+    # Only report healthy once PostgreSQL is ready to accept connections,
+    # so the web service doesn't start before the database is available.
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:
