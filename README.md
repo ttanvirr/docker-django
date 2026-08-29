@@ -1,40 +1,50 @@
 # Table of Contents <!-- omit in toc -->
 
 - [1. Overview: Containerize a Django application](#1-overview-containerize-a-django-application)
-- [2. Prerequisites](#2-prerequisites)
-- [3. Create the Django project](#3-create-the-django-project)
-- [4. Start with a simple `Dockerfile`](#4-start-with-a-simple-dockerfile)
-- [5. Create a simple docker compose](#5-create-a-simple-docker-compose)
-- [6. Create multi-stage `Dockerfile`](#6-create-multi-stage-dockerfile)
-- [7. Set up a development environment](#7-set-up-a-development-environment)
-  - [7.1. Update the Dockerfile](#71-update-the-dockerfile)
-  - [7.2. Update Compose file (target `development` stage)](#72-update-compose-file-target-development-stage)
-  - [7.3. Update Compose file (Configure Compose Watch)](#73-update-compose-file-configure-compose-watch)
-    - [7.3.1. Run with Compose Watch](#731-run-with-compose-watch)
-    - [7.3.2. Test Compose Watch](#732-test-compose-watch)
-- [8. Using mounts to `uv sync` in `Dockerfile`](#8-using-mounts-to-uv-sync-in-dockerfile)
-- [9. Setting up PostgreSQL Database](#9-setting-up-postgresql-database)
-  - [9.1. Add the PostgreSQL driver](#91-add-the-postgresql-driver)
-  - [9.2. Create an `.env` file](#92-create-an-env-file)
-  - [9.3. Update `settings.py`](#93-update-settingspy)
-  - [9.4. Add the PostgreSQL service](#94-add-the-postgresql-service)
-  - [9.5. Test postgreSQL](#95-test-postgresql)
-  - [9.6. Create and run migrations](#96-create-and-run-migrations)
-  - [9.7. Create superuser](#97-create-superuser)
-  - [9.8. Persist data through volumes](#98-persist-data-through-volumes)
-  - [9.9. Finalize the compose file](#99-finalize-the-compose-file)
-  - [9.10. Final test](#910-final-test)
+  - [1.1. Repository branches (git)](#11-repository-branches-git)
+  - [1.2. Prerequisites](#12-prerequisites)
+- [2. Create the Django project using `uv`](#2-create-the-django-project-using-uv)
+- [3. Start with a simple `Dockerfile`](#3-start-with-a-simple-dockerfile)
+- [4. Create a simple docker compose](#4-create-a-simple-docker-compose)
+- [5. Create multi-stage `Dockerfile`](#5-create-multi-stage-dockerfile)
+- [6. Set up a development environment](#6-set-up-a-development-environment)
+  - [6.1. Update the Dockerfile](#61-update-the-dockerfile)
+  - [6.2. Update Compose file (target `development` stage)](#62-update-compose-file-target-development-stage)
+  - [6.3. Update Compose file (Configure Compose Watch)](#63-update-compose-file-configure-compose-watch)
+    - [6.3.1. Run with Compose Watch](#631-run-with-compose-watch)
+    - [6.3.2. Test Compose Watch](#632-test-compose-watch)
+- [7. Using mounts to `uv sync` in `Dockerfile`](#7-using-mounts-to-uv-sync-in-dockerfile)
+- [8. Setting up PostgreSQL Database](#8-setting-up-postgresql-database)
+  - [8.1. Add the PostgreSQL driver](#81-add-the-postgresql-driver)
+  - [8.2. Create an `.env` file](#82-create-an-env-file)
+  - [8.3. Update `settings.py`](#83-update-settingspy)
+  - [8.4. Add the PostgreSQL service](#84-add-the-postgresql-service)
+  - [8.5. Test postgreSQL](#85-test-postgresql)
+  - [8.6. Create and run migrations](#86-create-and-run-migrations)
+  - [8.7. Create superuser](#87-create-superuser)
+  - [8.8. Persist data through volumes](#88-persist-data-through-volumes)
+  - [8.9. Finalize the compose file](#89-finalize-the-compose-file)
+  - [8.10. Final test](#810-final-test)
 
 # 1. Overview: Containerize a Django application
 
 This guide shows how to containerize a Django application using Docker. You'll scaffold the project with `uv`, create a production-ready `Dockerfile` using a `Docker Hardened Image`, then add a development stage and `Compose` Watch for fast iteration.
 
-# 2. Prerequisites
+## 1.1. Repository branches (git)
+
+This repository contains several branches, each with different Dockerfile versions. The `main` branch contains the latest version of the `Dockerfile`. Other branches include:
+
+- `Single-stage-dockerfile`: The simplest setup to run a Django application in a container.
+- `Multi-stage-dockerfile`: A 2-stage Dockerfile setup for better caching.
+- `development-stage`: A multi-stage Dockerfile setup with a development stage for local development.
+- `postgresql`: PostgreSQL database setup for a containerized Django application.
+
+## 1.2. Prerequisites
 
 - You have installed the latest version of [Docker Desktop](https://tinyurl.com/2up6tvrk).
 - You have [uv](https://tinyurl.com/5bdmvhn4) installed
 
-# 3. Create the Django project
+# 2. Create the Django project using `uv`
 
 1. Create a project directory named 'django-docker' and navigate to it.
 2. Initialize the project in the current directory, pinned to `Python 3.14`:
@@ -69,7 +79,7 @@ Your directory should now contain the following files:
 └── README.md
 ```
 
-# 4. Start with a simple `Dockerfile`
+# 3. Start with a simple `Dockerfile`
 
 We'll first create a simple one-stage image from a base python imgae from `Docker Hardened Images registry`.
 
@@ -143,7 +153,7 @@ We'll first create a simple one-stage image from a base python imgae from `Docke
 
 7. Open a browser and navigate to http://localhost:8000. You should see the Django welcome page.
 
-# 5. Create a simple docker compose
+# 4. Create a simple docker compose
 
 1. Create a `compose.yaml` file in project root:
 
@@ -171,7 +181,7 @@ We'll first create a simple one-stage image from a base python imgae from `Docke
 
    Press `ctrl+c` to stop the application.
 
-# 6. Create multi-stage `Dockerfile`
+# 5. Create multi-stage `Dockerfile`
 
 Now that we have the single-stage `Dockerfile` working and `compose.yaml` working, this is the right time to introduce a simple two-stage `Dockerfile`.
 
@@ -265,11 +275,11 @@ Open the browser and navigate to http://localhost:8000. You should again see the
 
 Press `ctrl+c` to stop the application.
 
-# 7. Set up a development environment
+# 6. Set up a development environment
 
 The production setup uses Gunicorn and requires a full image rebuild to pick up code changes. For development, you can add a `development` stage to your `Dockerfile` that uses Django's built-in server, and configure Compose Watch to automatically sync code changes into the running container without a rebuild.
 
-## 7.1. Update the Dockerfile
+## 6.1. Update the Dockerfile
 
 Replace your `Dockerfile` that adds a `development` stage alongside `production`:
 
@@ -333,7 +343,7 @@ CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
 
 ```
 
-## 7.2. Update Compose file (target `development` stage)
+## 6.2. Update Compose file (target `development` stage)
 
 Replace your `compose.yaml` to target the `development` stage:
 
@@ -359,7 +369,7 @@ services:
 
 Then run `docker compose up --build` and visit http://localhost:8000/. If you check the logs, you'll notice that this time the container is running Django's built-in development server (`runserver`) instead of Gunicorn.
 
-## 7.3. Update Compose file (Configure Compose Watch)
+## 6.3. Update Compose file (Configure Compose Watch)
 
 Right now, `COPY . .` copies the Django source code into the image during the build. If you modify a source file on your host, the change is not automatically reflected inside the running container. We can use Compose Watch to synchronise source-code changes into the running container.
 
@@ -405,7 +415,7 @@ services:
 > [!NOTE]
 > The `sync` action pushes file changes directly into the running container so Django's dev server reloads them automatically. A change to `pyproject.toml` or `uv.lock` triggers a full image rebuild instead.
 
-### 7.3.1. Run with Compose Watch
+### 6.3.1. Run with Compose Watch
 
 Now, start the development stack:
 
@@ -417,7 +427,7 @@ Open a browser and navigate to http://localhost:8000.
 
 If you check the logs, you'll notice "Watch enabled"
 
-### 7.3.2. Test Compose Watch
+### 6.3.2. Test Compose Watch
 
 Now let's make a small change in `config/urls.py` from the source code:
 
@@ -436,7 +446,7 @@ Compose Watch syncs the change into the container and Django's dev server reload
 
 Press `ctrl+c` to stop.
 
-# 8. Using mounts to `uv sync` in `Dockerfile`
+# 7. Using mounts to `uv sync` in `Dockerfile`
 
 We'll update the `Dockerfile` once again with a few improvements to how dependencies are installed::
 
@@ -515,9 +525,9 @@ CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
 
 Run `docker compose watch` to build and start the development environment again, then verify that the application starts successfully.
 
-# 9. Setting up PostgreSQL Database
+# 8. Setting up PostgreSQL Database
 
-## 9.1. Add the PostgreSQL driver
+## 8.1. Add the PostgreSQL driver
 
 Add the `psycopg` adapter to your project:
 
@@ -527,7 +537,7 @@ uv add "psycopg[binary,pool]"
 
 This will add the driver to `pyproject.toml` and install it into `.venv`.
 
-## 9.2. Create an `.env` file
+## 8.2. Create an `.env` file
 
 Create an `.env` file with the following:
 
@@ -548,7 +558,7 @@ Later, we'll pass these values to the PostgreSQL container through Docker Compos
 > [!IMPORTANT]
 > Add `.env` to `.gitignore`.
 
-## 9.3. Update `settings.py`
+## 8.3. Update `settings.py`
 
 Update the `DATABASES` configuration in `settings.py`:
 
@@ -569,7 +579,7 @@ DATABASES = {
 }
 ```
 
-## 9.4. Add the PostgreSQL service
+## 8.4. Add the PostgreSQL service
 
 We'll start by adding the basic `db` service to `compose.yaml`:
 
@@ -636,7 +646,7 @@ services:
 
 Run `docker compose watch` to build and start the development environment again, then verify that both the `db` and `web` containers are running.
 
-## 9.5. Test postgreSQL
+## 8.5. Test postgreSQL
 
 1. Run:
 
@@ -657,7 +667,7 @@ You should see the `mydockerdjango` database.
 > [!TIP]
 > You can also access the `exec` shell from your Docker Desktop by navigating to the `db` container.
 
-## 9.6. Create and run migrations
+## 8.6. Create and run migrations
 
 Run following commands to create and apply migrations:
 
@@ -666,7 +676,7 @@ docker compose exec web python manage.py makemigrations
 docker compose exec web python manage.py migrate
 ```
 
-## 9.7. Create superuser
+## 8.7. Create superuser
 
 Run following command to create a superuser:
 
@@ -674,7 +684,7 @@ Run following command to create a superuser:
 docker compose exec web python manage.py createsuperuser
 ```
 
-## 9.8. Persist data through volumes
+## 8.8. Persist data through volumes
 
 Currently, PostgreSQL stores its data inside the `db` container. If you delete the container, the database data will be lost.
 
@@ -718,7 +728,7 @@ The database data should still be available because it is stored in the `db-data
 > docker compose down -v
 > ```
 
-## 9.9. Finalize the compose file
+## 8.9. Finalize the compose file
 
 We will now add the following things:
 
@@ -833,7 +843,7 @@ volumes:
   db-data:
 ```
 
-## 9.10. Final test
+## 8.10. Final test
 
 Run the follwowing commands once again:
 
@@ -843,3 +853,5 @@ docker compose up --build
 ```
 
 Check that everything is okay.
+
+That's it!
