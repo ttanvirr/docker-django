@@ -1,9 +1,34 @@
 services:
   web:
-    # Build the image using Dockerfile in the current directory
-    build: .
-    # (optional) name the image
+    # Build the image using `Dockerfile`
+    build:
+      # use the current directory as the build context
+      context: .
+      # Build the `development` stage from the `Dockerfile` (not the `production` stage).
+      target: development
+
+    # (optional) Name the resulting image.
     image: docker-django
+
     ports:
       # equivalent to `docker run -p 8000:8000`
       - "8000:8000"
+
+    develop:
+      watch:
+        # Sync source file changes directly into the container
+        # so Django's dev server can reload them without a full image rebuild.
+        - action: sync
+          path: .
+          target: /app
+          # don't synchronise changes from these paths.
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - .git/
+            - .venv/
+        # Rebuild the image when dependencies change.
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
