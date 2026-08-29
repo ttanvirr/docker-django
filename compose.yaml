@@ -14,6 +14,21 @@ services:
       # equivalent to `docker run -p 8000:8000`
       - "8000:8000"
 
+    environment:
+      # Set debug mode to true
+      - DEBUG=1
+      # Database connection settings passed to Django application via environment variables.
+      # variables are defined in `.env` and used in `settings.py`
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+
+    # start `db` service before `web` service
+    depends_on:
+      - db
+
     develop:
       watch:
         # Sync source file changes directly into the container
@@ -32,3 +47,12 @@ services:
           path: pyproject.toml
         - action: rebuild
           path: uv.lock
+
+  db:
+    # Run PostgreSQL container using an image
+    image: dhi.io/postgres:18
+    environment:
+      # Left-side names are not arbitrary; Right-side name are defined in `.env`
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

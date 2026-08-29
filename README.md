@@ -13,6 +13,11 @@
     - [7.3.1. Run with Compose Watch](#731-run-with-compose-watch)
     - [7.3.2. Test Compose Watch](#732-test-compose-watch)
 - [8. Using mounts to `uv sync` in `Dockerfile`](#8-using-mounts-to-uv-sync-in-dockerfile)
+- [9. Setting up PostgreSQL Database](#9-setting-up-postgresql-database)
+  - [9.1. Add the PostgreSQL driver](#91-add-the-postgresql-driver)
+  - [9.2. Create an `env` file](#92-create-an-env-file)
+  - [9.3. Update `settings.py`](#93-update-settingspy)
+  - [9.4. Add the PostgreSQL service](#94-add-the-postgresql-service)
 
 # 1. Overview: Containerize a Django application
 
@@ -499,3 +504,122 @@ CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
 ```
 
 Run `docker compose watch` to build and start the development environment again, then verify that the application starts successfully.
+
+# 9. Setting up PostgreSQL Database
+
+## 9.1. Add the PostgreSQL driver
+
+Add the `psycopg` adapter to your project:
+
+```bash
+uv add "psycopg[binary,pool]"
+```
+
+This will add the driver to `pyproject.toml` and install it into `.venv`.
+
+## 9.2. Create an `env` file
+
+Create an `env` file with the following:
+
+```
+POSTGRES_DB=mydockerdjango
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<your-password>
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+```
+
+Replace <your-password> with your own password.
+
+Later, we'll pass these values to the PostgreSQL container through Docker Compose. The PostgreSQL image will use them to initialise the database and user.
+
+`POSTGRES_HOST` will contain the PostgreSQL service name (`db`). Docker Compose makes service names available as hostnames to other services on the Compose network.
+
+> [!IMPORTANT]
+> Add `.env` to `.gitignore`.
+
+## 9.3. Update `settings.py`
+
+Update the `DATABASES` configuration in `settings.py`:
+
+```py
+import os
+
+DEBUG = os.environ.get('DEBUG', '0') == '1'
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ["POSTGRES_DB"],
+        "USER": os.environ["POSTGRES_USER"],
+        "PASSWORD": os.environ["POSTGRES_PASSWORD"],
+        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
+        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+    }
+}
+```
+
+## 9.4. Add the PostgreSQL service
+
+We'll start by adding the basic `db` service to `compose.yaml`:
+
+```yaml
+services:
+  web:
+    # Build the image using `Dockerfile`
+    build:
+      # use the current directory as the build context
+      context: .
+      # Build the `development` stage from the `Dockerfile` (not the `production` stage).
+      target: development
+
+    # (optional) Name the resulting image.
+    image: docker-django
+
+    ports:
+      # equivalent to `docker run -p 8000:8000`
+      - "8000:8000"
+
+    environment:
+      # Set debug mode to true
+      - DEBUG=1
+      # Database connection settings passed to Django application via environment variables.
+      # variables are defined in `.env` and used in `settings.py`
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+
+    # start `db` service before `web` service
+    depends_on:
+      - db
+
+    develop:
+      watch:
+        # Sync source file changes directly into the container
+        # so Django's dev server can reload them without a full image rebuild.
+        - action: sync
+          path: .
+          target: /app
+          # don't synchronise changes from these paths.
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - .git/
+            - .venv/
+        # Rebuild the image when dependencies change.
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+
+  db:
+    # Run PostgreSQL container using an image
+    image: dhi.io/postgres:18
+    environment:
+      # Left-side names are not arbitrary; Right-side name are defined in `.env`
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+```
