@@ -2,7 +2,7 @@
 # Build my image from a base python image from DHI registry
 # `-dev` image includes tools needed to install packages.
 FROM dhi.io/python:3.14-alpine3.24-dev AS builder
-# Prevent Python from writing .pyc files to disk.
+# Prevent Python from writing `.pyc` files to disk.
 ENV PYTHONDONTWRITEBYTECODE=1
 # Prevent Python from buffering stdout/stderr so logs appear immediately.
 ENV PYTHONUNBUFFERED=1
@@ -19,19 +19,34 @@ COPY pyproject.toml uv.lock ./
 # `--no-install-project` tells uv not to install the project
 RUN uv sync --frozen --no-install-project
 
-###### RUNTIME STAGE #######
-# Use minimal DHI image with no shell or package manager
-# already runs as the nonroot user.
-FROM dhi.io/python:3.14-alpine3.24
+
+###### DEVELOPMENT STAGE #######
+# The development stage inherits the `-dev` image and `.venv` from the builder. 
+# Django's built-in server reloads when Compose Watch syncs files.
+FROM builder AS development
+# Make executables from the builder's `.venv` available on PATH.
+ENV PATH="/app/.venv/bin:$PATH"
+# Copy the application source code into `/app`.
+COPY . .
+# Expose port 8000: just a metadata (optional)
+EXPOSE 8000
+# Run Django's development server
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+
+###### PRODUCTION STAGE #######
+# The production stage uses the minimal runtime image, which has no shell,
+# no package manager, and already runs as the nonroot user.
+FROM dhi.io/python:3.14-alpine3.24 AS production
 # Prevent Python from writing .pyc files to disk.
 ENV PYTHONDONTWRITEBYTECODE=1
 # Prevent Python from buffering stdout/stderr so logs appear immediately.
 ENV PYTHONUNBUFFERED=1
-# Make executables from the copied virtual environment available on PATH.
+# Make executables from the builder's `.venv` available on PATH.
 ENV PATH="/app/.venv/bin:$PATH" 
 # Set `/app` as the working directory inside the container
 WORKDIR /app
-# Copy the pre-built virtual environment and application source code.
+# Copy the pre-built virtual environment from the builder stage.
 COPY --from=builder /app/.venv /app/.venv
 # Copy the application source code into `/app`.
 COPY . .

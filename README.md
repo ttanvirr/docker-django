@@ -6,6 +6,8 @@
 - [4. Start with a simple `Dockerfile`](#4-start-with-a-simple-dockerfile)
 - [5. Create a simple docker compose](#5-create-a-simple-docker-compose)
 - [6. Create multi-stage `Dockerfile`](#6-create-multi-stage-dockerfile)
+- [7. Set up a development environment](#7-set-up-a-development-environment)
+  - [Update the Dockerfile](#update-the-dockerfile)
 
 # 1. Overview: Containerize a Django application
 
@@ -246,3 +248,11 @@ docker compose up --build
 Open the browser and navigate to http://localhost:8000. You should again see the same Django welcome page.
 
 Press `ctrl+c` to stop the application.
+
+# 7. Set up a development environment
+
+The production setup uses Gunicorn and requires a full image rebuild to pick up code changes. For development, you can add a `development` stage to your `Dockerfile` that uses Django's built-in server, and configure Compose Watch to automatically sync code changes into the running container without a rebuild.
+
+## Update the Dockerfile
+
+Replace your `Dockerfile` that adds a `development` stage alongside `production`:
