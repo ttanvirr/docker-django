@@ -7,11 +7,12 @@
 - [5. Create a simple docker compose](#5-create-a-simple-docker-compose)
 - [6. Create multi-stage `Dockerfile`](#6-create-multi-stage-dockerfile)
 - [7. Set up a development environment](#7-set-up-a-development-environment)
-  - [7.1. Update the Dockerfile (Final)](#71-update-the-dockerfile-final)
+  - [7.1. Update the Dockerfile](#71-update-the-dockerfile)
   - [7.2. Update Compose file (target `development` stage)](#72-update-compose-file-target-development-stage)
   - [7.3. Update Compose file (Configure Compose Watch)](#73-update-compose-file-configure-compose-watch)
     - [7.3.1. Run with Compose Watch](#731-run-with-compose-watch)
     - [7.3.2. Test Compose Watch](#732-test-compose-watch)
+- [8. Using mounts to `uv sync` in `Dockerfile`](#8-using-mounts-to-uv-sync-in-dockerfile)
 
 # 1. Overview: Containerize a Django application
 
@@ -257,7 +258,7 @@ Press `ctrl+c` to stop the application.
 
 The production setup uses Gunicorn and requires a full image rebuild to pick up code changes. For development, you can add a `development` stage to your `Dockerfile` that uses Django's built-in server, and configure Compose Watch to automatically sync code changes into the running container without a rebuild.
 
-## 7.1. Update the Dockerfile (Final)
+## 7.1. Update the Dockerfile
 
 Replace your `Dockerfile` that adds a `development` stage alongside `production`:
 
@@ -419,3 +420,82 @@ urlpatterns = [
 ```
 
 Save the changes and look at your logs, you'll see "changes were detected". Visit http://localhost:8000 (or reload it) to see the response "Hello from Django-Docker!"
+
+# 8. Using mounts to `uv sync` in `Dockerfile`
+
+We'll update the `Dockerfile` once again with a few improvements to how dependencies are installed::
+
+- Add `UV_LINK_MODE=copy` so `uv` copies packages instead of creating links between the cache and the virtual environment.
+- Instead of permanently copying `pyproject.toml` and `uv.lock` into an image layer, make them temporarily available to `uv sync` using bind mounts.
+- Use a cache mount so `uv` can reuse downloaded packages between builds.
+- Add `# syntax=docker/dockerfile:1` to the top of the `Dockerfile`. This tells Docker to use the stable version `1` of the Dockerfile syntax, which supports features such as `RUN --mount`.
+
+So, our final Dockerfile is:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+###### BUILD STAGE #######
+# Build my image from a base python image from DHI registry
+# `-dev` image includes tools needed to install packages.
+FROM dhi.io/python:3.14-alpine3.24-dev AS builder
+# Prevent Python from writing `.pyc` files to disk.
+ENV PYTHONDONTWRITEBYTECODE=1
+# Prevent Python from buffering stdout/stderr so logs appear immediately.
+ENV PYTHONUNBUFFERED=1
+# Install uv using python image's pip;
+# `--quiet` (optional) reduces pip's output;
+# `--root-user-action=ignore` (optional) prevents pip from warning about the root user
+RUN pip install --quiet --root-user-action=ignore uv
+# Use copy mode since the cache and build filesystem are on different volumes.
+ENV UV_LINK_MODE=copy
+# Set `/app` as the working directory inside the container
+WORKDIR /app
+# Install dependencies into a `.venv` using `cache` and `bind` mounts
+# so neither uv nor the lock files need to be copied into the image.
+# `uv sync` creates `.venv` and installs the dependencies in it.
+# `--frozen` tells uv to use the existing `uv.lock` file;
+# `--no-install-project` tells uv not to install the project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project
+
+
+###### DEVELOPMENT STAGE #######
+# The development stage inherits the `-dev` image and `.venv` from the builder.
+# Django's built-in server reloads when Compose Watch syncs files.
+FROM builder AS development
+# Make executables from the builder's `.venv` available on PATH.
+ENV PATH="/app/.venv/bin:$PATH"
+# Copy the application source code into `/app`.
+COPY . .
+# Expose port 8000: just a metadata (optional)
+EXPOSE 8000
+# Run Django's development server
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+
+###### PRODUCTION STAGE #######
+# The production stage uses the minimal runtime image, which has no shell,
+# no package manager, and already runs as the nonroot user.
+FROM dhi.io/python:3.14-alpine3.24 AS production
+# Prevent Python from writing .pyc files to disk.
+ENV PYTHONDONTWRITEBYTECODE=1
+# Prevent Python from buffering stdout/stderr so logs appear immediately.
+ENV PYTHONUNBUFFERED=1
+# Make executables from the builder's `.venv` available on PATH.
+ENV PATH="/app/.venv/bin:$PATH"
+# Set `/app` as the working directory inside the container
+WORKDIR /app
+# Copy the pre-built virtual environment from the builder stage.
+COPY --from=builder /app/.venv /app/.venv
+# Copy the application source code into `/app`.
+COPY . .
+# Expose port 8000: just a metadata (optional)
+EXPOSE 8000
+# Run Gunicorn as the production WSGI server.
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+```
+
+Run `docker compose watch` to build and start the development environment again, then verify that the application starts successfully.

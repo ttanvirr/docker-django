@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 ###### BUILD STAGE #######
 # Build my image from a base python image from DHI registry
 # `-dev` image includes tools needed to install packages.
@@ -10,14 +12,19 @@ ENV PYTHONUNBUFFERED=1
 # `--quiet` (optional) reduces pip's output; 
 # `--root-user-action=ignore` (optional) prevents pip from warning about the root user
 RUN pip install --quiet --root-user-action=ignore uv
+# Use copy mode since the cache and build filesystem are on different volumes.
+ENV UV_LINK_MODE=copy
 # Set `/app` as the working directory inside the container
 WORKDIR /app
-# Copy the dependencies files to the working directory
-COPY pyproject.toml uv.lock ./
+# Install dependencies into a `.venv` using `cache` and `bind` mounts
+# so neither uv nor the lock files need to be copied into the image.
 # `uv sync` creates `.venv` and installs the dependencies in it.
 # `--frozen` tells uv to use the existing `uv.lock` file;
 # `--no-install-project` tells uv not to install the project
-RUN uv sync --frozen --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project
 
 
 ###### DEVELOPMENT STAGE #######
